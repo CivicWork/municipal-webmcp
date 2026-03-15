@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "CivicWork WebMCP",
+  "version": "0.1.0",
+  "description": "WebMCP tools for municipal governance sites — Legistar meetings/legislation and Municode codified law.",
+  "content_scripts": [
+    {
+      "matches": ["https://*.legistar.com/*"],
+      "js": ["legistar.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://library.municode.com/*"],
+      "js": ["municode.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    }
+  ]
+}

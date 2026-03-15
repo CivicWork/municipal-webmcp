@@ -1,0 +1,378 @@
+{
+  "$schema": "https://webmachinelearning.github.io/webmcp/",
+  "_meta": {
+    "name": "Granicus Legistar Municipal Legislative Management System",
+    "description": "WebMCP configuration for Granicus Legistar instances used by municipal governments to manage meetings, legislation, agendas, minutes, and elected officials. This config is parameterized — swap the 'municipality' subdomain to target any Legistar deployment.",
+    "version": "1.0.0",
+    "author": "CivicWork, Inc.",
+    "license": "Apache-2.0",
+    "domain_pattern": "{municipality}.legistar.com",
+    "reference_instance": "countyofkane.legistar.com",
+    "platform": "Granicus Legistar (ASP.NET WebForms)",
+    "last_verified": "2026-03-05",
+    "tags": ["government", "municipal", "legislation", "open-data", "meetings", "agendas"],
+    "notes": {
+      "subdomain_convention": "Subdomain varies by municipality. Examples: countyofkane, chicago, kansascity, kingcounty, lakecounty, madison, oregon-city. The user or deployment config must supply the correct subdomain.",
+      "pagination": "Legistar uses Telerik RadGrid with ASP.NET postback-based pagination. Page size defaults to 25 rows. Pagination controls are at the bottom of grid containers. Changing pages requires __doPostBack() calls, not simple URL navigation.",
+      "asp_net_viewstate": "All forms use ASP.NET ViewState. POST-based interactions require maintaining __VIEWSTATE, __VIEWSTATEGENERATOR, and __EVENTVALIDATION hidden fields. For read-only browsing, GET requests to page URLs work fine.",
+      "date_formats": "Dates appear as M/D/YYYY in the UI. Year filter dropdowns on Calendar.aspx support 'All Years', specific years, and relative ranges (This Week, This Month, etc.).",
+      "auth": "Public pages require no authentication. Sign-in is available but only needed for administrative functions. All legislative data is public record."
+    }
+  },
+
+  "tools": [
+    {
+      "name": "legistar_list_upcoming_meetings",
+      "description": "Navigate to the Legistar Calendar page and extract a list of upcoming meetings for a municipality. Returns meeting name (committee/body), date, time, location, and links to agenda, minutes, and meeting detail pages. Supports filtering by year/time range and by department/committee.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "description": "Legistar subdomain for the target municipality (e.g. 'countyofkane', 'chicago', 'kansascity')"
+          },
+          "year_filter": {
+            "type": "string",
+            "description": "Optional year or relative time filter. Values: 'All Years', '2026', '2025', 'This Week', 'This Month', 'This Year', 'Next Week', 'Next Month', 'Today'. Default shows upcoming meetings.",
+            "default": "This Month"
+          },
+          "department_filter": {
+            "type": "string",
+            "description": "Optional committee/department name to filter by. Must match a value in the department dropdown. Use 'All Departments' to see everything.",
+            "default": "All Departments"
+          }
+        },
+        "required": ["municipality"]
+      },
+      "_navigation": {
+        "url": "https://{municipality}.legistar.com/Calendar.aspx",
+        "method": "GET",
+        "selectors": {
+          "grid_container": "#ctl00_ContentPlaceHolder1_gridCalendar_ctl00",
+          "data_rows": "#ctl00_ContentPlaceHolder1_gridCalendar_ctl00 > tbody > tr:not(.rgHeader):not(.rgPager)",
+          "year_dropdown": "select[id*='lstYears']",
+          "department_dropdown": "select[id*='lstBodies']",
+          "columns": {
+            "name": "td:nth-child(1) a",
+            "meeting_date": "td:nth-child(2)",
+            "ical_link": "td:nth-child(3) a[href*='View.ashx?M=IC']",
+            "meeting_time": "td:nth-child(4)",
+            "meeting_location": "td:nth-child(5)",
+            "meeting_details_link": "td:nth-child(6) a[href*='MeetingDetail.aspx']",
+            "agenda_link": "td:nth-child(7) a[href*='View.ashx?M=A']",
+            "accessible_agenda_link": "td:nth-child(8) a[href*='View.ashx?M=AADA']",
+            "minutes_link": "td:nth-child(9) a[href*='View.ashx?M=M']",
+            "accessible_minutes_link": "td:nth-child(10) a[href*='View.ashx?M=MADA']",
+            "minutes_packet_link": "td:nth-child(11) a"
+          }
+        },
+        "pagination": {
+          "type": "telerik_radgrid_postback",
+          "page_size_default": 25,
+          "page_controls": ".rgPager .rgArrPart2 input"
+        }
+      }
+    },
+
+    {
+      "name": "legistar_get_meeting_detail",
+      "description": "Navigate to a specific Legistar meeting detail page and extract the full meeting record: committee name, date/time, location, agenda status, minutes status, links to published agenda/minutes PDFs, and the complete list of agenda items with file numbers, types, titles, actions taken, and vote results.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "description": "Legistar subdomain for the target municipality"
+          },
+          "meeting_id": {
+            "type": "string",
+            "description": "Numeric meeting ID from the MeetingDetail.aspx URL parameter 'ID'"
+          },
+          "meeting_guid": {
+            "type": "string",
+            "description": "GUID from the MeetingDetail.aspx URL parameter 'GUID'"
+          }
+        },
+        "required": ["municipality", "meeting_id", "meeting_guid"]
+      },
+      "_navigation": {
+        "url": "https://{municipality}.legistar.com/MeetingDetail.aspx?ID={meeting_id}&GUID={meeting_guid}&Options=info|&Search=",
+        "method": "GET",
+        "selectors": {
+          "meeting_header": {
+            "meeting_name": "#ctl00_ContentPlaceHolder1_hypBody",
+            "meeting_date_time": "#ctl00_ContentPlaceHolder1_lblDate",
+            "meeting_location": "#ctl00_ContentPlaceHolder1_lblLocation",
+            "agenda_status": "#ctl00_ContentPlaceHolder1_lblAgendaStatus",
+            "minutes_status": "#ctl00_ContentPlaceHolder1_lblMinutesStatus",
+            "agenda_pdf_link": "a[href*='View.ashx?M=A']",
+            "accessible_agenda_link": "a[href*='View.ashx?M=AADA']",
+            "minutes_pdf_link": "a[href*='View.ashx?M=M']",
+            "accessible_minutes_link": "a[href*='View.ashx?M=MADA']"
+          },
+          "agenda_items_grid": "#ctl00_ContentPlaceHolder1_gridMain_ctl00",
+          "agenda_item_rows": "#ctl00_ContentPlaceHolder1_gridMain_ctl00 > tbody > tr:not(.rgHeader):not(.rgPager)",
+          "agenda_item_columns": {
+            "file_number": "td:nth-child(1) a[href*='LegislationDetail.aspx']",
+            "type": "td:nth-child(2)",
+            "title": "td:nth-child(3)",
+            "action": "td:nth-child(4)",
+            "result": "td:nth-child(5)",
+            "action_details_link": "td:nth-child(6) a"
+          }
+        },
+        "related_urls": {
+          "agenda_pdf": "https://{municipality}.legistar.com/View.ashx?M=A&ID={meeting_id}&GUID={meeting_guid}",
+          "minutes_pdf": "https://{municipality}.legistar.com/View.ashx?M=M&ID={meeting_id}&GUID={meeting_guid}",
+          "accessible_agenda": "https://{municipality}.legistar.com/View.ashx?M=AADA&ID={meeting_id}&GUID={meeting_guid}",
+          "icalendar_export": "https://{municipality}.legistar.com/View.ashx?M=IC&ID={meeting_id}&GUID={meeting_guid}"
+        }
+      }
+    },
+
+    {
+      "name": "legistar_search_legislation",
+      "description": "Navigate to the Legistar Legislation search page and search for legislative files (resolutions, ordinances, motions, etc.) by keyword, file number, type, status, or date range. Returns matching legislation with file numbers, types, titles, statuses, and links to full detail pages.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "description": "Legistar subdomain for the target municipality"
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Free-text keyword search across legislation titles and text"
+          },
+          "file_number": {
+            "type": "string",
+            "description": "Specific file number to look up (e.g. '25-420', 'TMP-25-147')"
+          },
+          "legislation_type": {
+            "type": "string",
+            "description": "Filter by type. Common values: 'Resolution', 'Ordinance', 'Proclamation', 'Appointment', 'Presentation/Discussion', 'Zoning Petition'. Values vary by municipality."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status. Common values: 'Passed', 'Failed', 'Pending', 'Adopted', 'Withdrawn'. Values vary by municipality."
+          },
+          "year": {
+            "type": "string",
+            "description": "Filter by year (e.g. '2026', '2025')"
+          }
+        },
+        "required": ["municipality"]
+      },
+      "_navigation": {
+        "url": "https://{municipality}.legistar.com/Legislation.aspx",
+        "method": "GET",
+        "notes": "The search form uses ASP.NET postback. The agent must: (1) navigate to the page, (2) fill search fields, (3) trigger the search button click. The search input is typically id='ctl00_ContentPlaceHolder1_txtSearch'. Type dropdown is 'ctl00_ContentPlaceHolder1_lstType'. Status is 'ctl00_ContentPlaceHolder1_lstStatus'. Year is 'ctl00_ContentPlaceHolder1_lstYears'. Full-text search checkbox is 'ctl00_ContentPlaceHolder1_chkFullText'.",
+        "selectors": {
+          "search_input": "input[id*='txtSearch']",
+          "search_button": "input[id*='btnSearch']",
+          "type_dropdown": "select[id*='lstType']",
+          "status_dropdown": "select[id*='lstStatus']",
+          "year_dropdown": "select[id*='lstYears']",
+          "fulltext_checkbox": "input[id*='chkFullText']",
+          "results_grid": "#ctl00_ContentPlaceHolder1_gridMain_ctl00",
+          "result_rows": "#ctl00_ContentPlaceHolder1_gridMain_ctl00 > tbody > tr:not(.rgHeader):not(.rgPager)",
+          "result_columns": {
+            "file_number": "td:nth-child(1) a[href*='LegislationDetail.aspx']",
+            "type": "td:nth-child(2)",
+            "status": "td:nth-child(3)",
+            "file_created": "td:nth-child(4)",
+            "title": "td:nth-child(5) a",
+            "in_control": "td:nth-child(6) a[href*='DepartmentDetail.aspx']"
+          }
+        }
+      }
+    },
+
+    {
+      "name": "legistar_get_legislation_detail",
+      "description": "Navigate to a specific Legistar legislation detail page and extract the complete legislative record: file number, type, status, title, sponsors, creation date, controlling body, full text, vote history with dates and results, and links to all attachments (executive summaries, supporting documents, etc.).",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "description": "Legistar subdomain for the target municipality"
+          },
+          "legislation_id": {
+            "type": "string",
+            "description": "Numeric legislation ID from the LegislationDetail.aspx URL parameter 'ID'"
+          },
+          "legislation_guid": {
+            "type": "string",
+            "description": "GUID from the LegislationDetail.aspx URL parameter 'GUID'"
+          }
+        },
+        "required": ["municipality", "legislation_id", "legislation_guid"]
+      },
+      "_navigation": {
+        "url": "https://{municipality}.legistar.com/LegislationDetail.aspx?ID={legislation_id}&GUID={legislation_guid}&Options=&Search=",
+        "method": "GET",
+        "selectors": {
+          "header_fields": {
+            "file_number": "#ctl00_ContentPlaceHolder1_lblFile2",
+            "type": "#ctl00_ContentPlaceHolder1_lblType2",
+            "status": "#ctl00_ContentPlaceHolder1_lblStatus2",
+            "file_created": "#ctl00_ContentPlaceHolder1_lblIntroduced2",
+            "in_control": "#ctl00_ContentPlaceHolder1_hypInControl",
+            "on_agenda": "#ctl00_ContentPlaceHolder1_lblOnAgenda2",
+            "final_action": "#ctl00_ContentPlaceHolder1_lblPassed2",
+            "title": "#ctl00_ContentPlaceHolder1_lblTitle2",
+            "sponsors": "#ctl00_ContentPlaceHolder1_lblSponsors2"
+          },
+          "attachments": "#ctl00_ContentPlaceHolder1_lblAttachments2 a",
+          "attachment_url_pattern": "View.ashx?M=F&ID={fileId}&GUID={fileGuid}",
+          "history_tab": "a[href='#tabHistory']",
+          "text_tab": "a[href='#tabText']",
+          "history_grid": "#ctl00_ContentPlaceHolder1_gridLegislation_ctl00",
+          "history_rows": "#ctl00_ContentPlaceHolder1_gridLegislation_ctl00 > tbody > tr:not(.rgHeader)",
+          "history_columns": {
+            "date": "td:nth-child(1)",
+            "action_by": "td:nth-child(2)",
+            "action": "td:nth-child(3)",
+            "result": "td:nth-child(4)",
+            "action_details_link": "td:nth-child(5) a",
+            "meeting_details_link": "td:nth-child(6) a[href*='MeetingDetail.aspx']"
+          },
+          "legislation_text_body": "#divText"
+        },
+        "related_urls": {
+          "legislation_text_report": "https://{municipality}.legistar.com/ViewReport.ashx?M=R&N=Text&GID={gid}&ID={text_id}&GUID={text_guid}&Title=Legislation+Text",
+          "legislation_details_report": "https://{municipality}.legistar.com/ViewReport.ashx?M=R&N=Master&GID={gid}&ID={legislation_id}&GUID={legislation_guid}&Title=Legislation+Details",
+          "legislation_details_with_text": "https://{municipality}.legistar.com/ViewReport.ashx?M=R&N=Master&GID={gid}&ID={legislation_id}&GUID={legislation_guid}&Extra=WithText&Title=Legislation+Details+(With+Text)"
+        }
+      }
+    },
+
+    {
+      "name": "legistar_list_people",
+      "description": "Navigate to the Legistar People/Office Members page and extract a list of all current elected officials, board members, and key office holders for a municipality. Returns names with links to person detail pages, email addresses, and website links. Supports filtering to show current, past, or all members.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "description": "Legistar subdomain for the target municipality"
+          },
+          "view_filter": {
+            "type": "string",
+            "description": "Which members to show: 'Current' (default), 'Past', or 'All'",
+            "enum": ["Current", "Past", "All"],
+            "default": "Current"
+          }
+        },
+        "required": ["municipality"]
+      },
+      "_navigation": {
+        "url": "https://{municipality}.legistar.com/People.aspx",
+        "method": "GET",
+        "selectors": {
+          "view_toggle": "a[id*='Current'], a[id*='Past'], a[id*='All']",
+          "grid_container": "#ctl00_ContentPlaceHolder1_gridPeople_ctl00",
+          "data_rows": "#ctl00_ContentPlaceHolder1_gridPeople_ctl00 > tbody > tr:not(.rgHeader):not(.rgPager)",
+          "columns": {
+            "person_name": "td:nth-child(1) a[href*='PersonDetail.aspx']",
+            "email": "td:nth-child(2) a[href^='mailto:']",
+            "website": "td:nth-child(3) a"
+          }
+        },
+        "person_detail_url_pattern": "https://{municipality}.legistar.com/PersonDetail.aspx?ID={person_id}&GUID={person_guid}&Search="
+      }
+    },
+
+    {
+      "name": "legistar_get_document_url",
+      "description": "Construct direct download URLs for Legistar documents including agendas, minutes, attachments, and legislation text. Legistar uses a consistent View.ashx endpoint with mode parameters to serve different document types. Returns the URL — the agent or user can then fetch or download the document.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "description": "Legistar subdomain for the target municipality"
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Type of document to retrieve",
+            "enum": ["agenda", "accessible_agenda", "minutes", "accessible_minutes", "attachment", "icalendar", "legislation_text_report"]
+          },
+          "record_id": {
+            "type": "string",
+            "description": "The numeric ID of the meeting (for agenda/minutes/ical) or file (for attachments)"
+          },
+          "record_guid": {
+            "type": "string",
+            "description": "The GUID of the meeting or file"
+          }
+        },
+        "required": ["municipality", "document_type", "record_id", "record_guid"]
+      },
+      "_navigation": {
+        "url_templates": {
+          "agenda": "https://{municipality}.legistar.com/View.ashx?M=A&ID={record_id}&GUID={record_guid}",
+          "accessible_agenda": "https://{municipality}.legistar.com/View.ashx?M=AADA&ID={record_id}&GUID={record_guid}",
+          "minutes": "https://{municipality}.legistar.com/View.ashx?M=M&ID={record_id}&GUID={record_guid}",
+          "accessible_minutes": "https://{municipality}.legistar.com/View.ashx?M=MADA&ID={record_id}&GUID={record_guid}",
+          "attachment": "https://{municipality}.legistar.com/View.ashx?M=F&ID={record_id}&GUID={record_guid}",
+          "icalendar": "https://{municipality}.legistar.com/View.ashx?M=IC&ID={record_id}&GUID={record_guid}"
+        },
+        "notes": "All View.ashx URLs return direct file downloads (PDF for agendas/minutes/attachments, .ics for iCalendar). The 'M' parameter controls document mode: A=Agenda, AADA=Accessible Agenda, M=Minutes, MADA=Accessible Minutes, F=File/Attachment, IC=iCalendar."
+      }
+    },
+
+    {
+      "name": "legistar_list_departments",
+      "description": "Navigate to the Legistar Departments page and extract a list of all legislative bodies, committees, and departments for a municipality. Returns department/committee names with links to their detail pages showing membership and meeting history.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "description": "Legistar subdomain for the target municipality"
+          }
+        },
+        "required": ["municipality"]
+      },
+      "_navigation": {
+        "url": "https://{municipality}.legistar.com/Departments.aspx",
+        "method": "GET",
+        "selectors": {
+          "grid_container": "#ctl00_ContentPlaceHolder1_gridDepartments_ctl00",
+          "data_rows": "#ctl00_ContentPlaceHolder1_gridDepartments_ctl00 > tbody > tr:not(.rgHeader):not(.rgPager)",
+          "columns": {
+            "department_name": "td:nth-child(1) a[href*='DepartmentDetail.aspx']",
+            "type": "td:nth-child(2)"
+          }
+        },
+        "department_detail_url_pattern": "https://{municipality}.legistar.com/DepartmentDetail.aspx?ID={dept_id}&GUID={dept_guid}"
+      }
+    }
+  ],
+
+  "_known_municipalities": {
+    "description": "Partial list of known Legistar subdomains for reference. This is not exhaustive — hundreds of municipalities use Legistar.",
+    "illinois": [
+      { "subdomain": "countyofkane", "name": "Kane County, IL" },
+      { "subdomain": "chicago", "name": "City of Chicago, IL" },
+      { "subdomain": "lakecounty", "name": "Lake County, IL" }
+    ],
+    "other_examples": [
+      { "subdomain": "kansascity", "name": "Kansas City, MO" },
+      { "subdomain": "kingcounty", "name": "King County, WA" },
+      { "subdomain": "madison", "name": "City of Madison, WI" },
+      { "subdomain": "oregon-city", "name": "City of Oregon City, OR" },
+      { "subdomain": "jcc", "name": "Judicial Council of California" },
+      { "subdomain": "minnesotapuc", "name": "Minnesota Public Utilities Commission" }
+    ]
+  }
+}

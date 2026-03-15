@@ -1,0 +1,456 @@
+{
+  "$schema": "https://webmachinelearning.github.io/webmcp/",
+  "_meta": {
+    "name": "Municode / MunicodeNEXT Code of Ordinances Library",
+    "description": "WebMCP configuration for the Municode (CivicPlus) Code Library — the largest collection of codified municipal law in the United States (3,300+ codes). This config provides tools for browsing, searching, and retrieving codified ordinances. It includes both browser-based SPA tools and direct REST API endpoints. Parameterized by state and municipality slug.",
+    "version": "1.0.0",
+    "author": "CivicWork, Inc.",
+    "license": "Apache-2.0",
+    "domain": "library.municode.com",
+    "api_domain": "api.municode.com",
+    "platform": "MunicodeNEXT (JavaScript SPA, CivicPlus)",
+    "last_verified": "2026-03-05",
+    "tags": ["government", "municipal", "ordinances", "codified-law", "zoning", "legal", "open-data"],
+    "notes": {
+      "spa_architecture": "MunicodeNEXT is a JavaScript single-page application. Server responses return empty HTML shells — all content is rendered client-side. For browser agents (WebMCP, Playwright, etc.), tools must wait for the SPA to hydrate before reading DOM content. For programmatic access, the REST API at api.municode.com returns structured JSON.",
+      "api_status": "The api.municode.com REST API is undocumented but publicly accessible. It powers the MunicodeNEXT SPA. No authentication is required for read operations. The API may change without notice.",
+      "url_structure": "Library URLs follow the pattern: library.municode.com/{state_abbr}/{municipality_slug}/codes/{publication_slug}?nodeId={nodeId}. The state abbreviation is lowercase two-letter (e.g., 'il'). The municipality slug is lowercase hyphenated (e.g., 'elgin'). The nodeId is an encoded path through the document tree (e.g., 'MUCO_TIT19ZO' for Title 19 Zoning).",
+      "data_model": "Municode organizes data as: State → Client (municipality) → Products (publications like 'Code of Ordinances') → Jobs (specific codification versions) → Document Tree (hierarchical nodes). Each node has a nodeId that can be used to retrieve its children or full content.",
+      "companion_to": "This config is designed to work alongside the Legistar webMCP config. Legistar tracks legislative workflow (proposed ordinances, committee votes, agendas). Municode hosts the resulting codified law. Together they cover the full lifecycle: proposal → adoption → codification."
+    }
+  },
+
+  "tools": [
+    {
+      "name": "municode_list_municipalities",
+      "description": "List all municipalities in a given US state that have their code of ordinances published on the Municode library. Returns municipality names and their URL slugs. Useful for discovering whether a municipality is on Municode and what slug to use for subsequent lookups.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state_abbr": {
+            "type": "string",
+            "description": "Two-letter US state abbreviation, lowercase (e.g., 'il', 'ca', 'tx')",
+            "pattern": "^[a-z]{2}$"
+          }
+        },
+        "required": ["state_abbr"]
+      },
+      "_navigation": {
+        "browser_url": "https://library.municode.com/{state_abbr}",
+        "api_endpoint": {
+          "method": "GET",
+          "url": "https://api.municode.com/Clients?stateAbbr={state_abbr}",
+          "response_format": "JSON array of client objects with clientId, name, slug, stateAbbr"
+        },
+        "spa_selectors": {
+          "notes": "SPA renders a list of municipality links. Wait for client-side rendering to complete before reading DOM.",
+          "municipality_links": "a[href*='/codes/']",
+          "municipality_name": ".client-name"
+        }
+      }
+    },
+
+    {
+      "name": "municode_browse_table_of_contents",
+      "description": "Browse the table of contents (document tree) of a municipality's code of ordinances. Returns the top-level structure (Titles, Chapters) or the children of any specific node. Each node has a nodeId that can be used for deeper navigation or to retrieve full section text.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state_abbr": {
+            "type": "string",
+            "description": "Two-letter US state abbreviation, lowercase"
+          },
+          "municipality_slug": {
+            "type": "string",
+            "description": "Municipality URL slug as it appears in the Municode library URL (e.g., 'elgin', 'aurora', 'naperville')"
+          },
+          "publication_slug": {
+            "type": "string",
+            "description": "Publication slug, typically 'code_of_ordinances'. Some municipalities have multiple publications (charter, land_development_code, etc.).",
+            "default": "code_of_ordinances"
+          },
+          "node_id": {
+            "type": "string",
+            "description": "Optional nodeId to browse children of a specific section. Omit to get the top-level table of contents. Example nodeIds: 'ELMUCO' (Elgin root), 'MUCO_TIT19ZO' (Title 19 Zoning), 'MUCO_TIT9HESA' (Title 9 Health & Safety)."
+          }
+        },
+        "required": ["state_abbr", "municipality_slug"]
+      },
+      "_navigation": {
+        "browser_url": "https://library.municode.com/{state_abbr}/{municipality_slug}/codes/{publication_slug}?nodeId={node_id}",
+        "api_endpoint": {
+          "method": "GET",
+          "url": "https://api.municode.com/CodeTree?jobId={jobId}&nodeId={node_id}&productId={productId}",
+          "notes": "Requires jobId and productId which must be discovered via municode_get_client_info first. Returns array of child node objects with nodeId, title, and hasChildren boolean.",
+          "response_fields": {
+            "nodeId": "Unique identifier for this section in the document tree",
+            "title": "Display title (e.g., 'Title 19 - ZONING')",
+            "hasChildren": "Whether this node has child sections",
+            "isNew": "Whether this section was recently added",
+            "isModified": "Whether this section was recently modified"
+          }
+        },
+        "spa_selectors": {
+          "toc_container": "#codeToc, .toc-container",
+          "toc_items": ".toc-item, li.ng-scope",
+          "toc_item_link": "a[ng-click], a.toc-link",
+          "toc_item_text": ".toc-item-text, span.ng-binding",
+          "expand_toggle": ".toggle-icon, .fa-caret-right",
+          "new_badge": ".badge-new",
+          "modified_badge": ".badge-modified"
+        }
+      }
+    },
+
+    {
+      "name": "municode_get_section_content",
+      "description": "Retrieve the full text content of a specific code section identified by its nodeId. Returns the complete ordinance text including section numbers, headings, body text, and any subsections. Also returns content of all child nodes within the section.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state_abbr": {
+            "type": "string",
+            "description": "Two-letter US state abbreviation, lowercase"
+          },
+          "municipality_slug": {
+            "type": "string",
+            "description": "Municipality URL slug"
+          },
+          "publication_slug": {
+            "type": "string",
+            "description": "Publication slug",
+            "default": "code_of_ordinances"
+          },
+          "node_id": {
+            "type": "string",
+            "description": "The nodeId of the section to retrieve (e.g., 'MUCO_TIT19ZO_CH19.07GEPR_S19.07.030AM')"
+          }
+        },
+        "required": ["state_abbr", "municipality_slug", "node_id"]
+      },
+      "_navigation": {
+        "browser_url": "https://library.municode.com/{state_abbr}/{municipality_slug}/codes/{publication_slug}?nodeId={node_id}",
+        "api_endpoint": {
+          "method": "GET",
+          "url": "https://api.municode.com/Content?jobId={jobId}&nodeId={node_id}&productId={productId}",
+          "notes": "Returns HTML content of the section and all descendant sections. The response includes the rendered ordinance text with formatting preserved.",
+          "response_fields": {
+            "content": "HTML string containing the full section text",
+            "nodeId": "The requested nodeId",
+            "title": "Section title"
+          }
+        },
+        "spa_selectors": {
+          "content_container": "#codeContent, .code-content",
+          "section_heading": ".code-section-heading, h3.code-heading",
+          "section_body": ".code-section-body, .code-text",
+          "history_note": ".history-note, .code-history",
+          "ord_link": "a.ord-link, a[href*='ordbank']"
+        }
+      }
+    },
+
+    {
+      "name": "municode_search_code",
+      "description": "Search within a municipality's code of ordinances for a keyword or phrase. Returns matching sections with hit highlights, section titles, and nodeIds for retrieving full content. Supports boolean operators (AND, OR, NOT) and phrase search with quotes.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state_abbr": {
+            "type": "string",
+            "description": "Two-letter US state abbreviation, lowercase"
+          },
+          "municipality_slug": {
+            "type": "string",
+            "description": "Municipality URL slug"
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Search query. Supports keywords, phrases in quotes, and boolean operators (AND, OR, NOT). Example: '\"short-term rental\" AND zoning'"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "What content types to search: 'code' (codified ordinances), 'ordinances' (OrdBank originals), 'munidocs' (archived documents), or 'all'",
+            "enum": ["code", "ordinances", "munidocs", "all"],
+            "default": "code"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number for paginated results (1-based)",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Number of results per page",
+            "default": 25
+          }
+        },
+        "required": ["state_abbr", "municipality_slug", "search_text"]
+      },
+      "_navigation": {
+        "browser_url": "https://library.municode.com/{state_abbr}/{municipality_slug}/codes/{publication_slug}",
+        "browser_action": "Navigate to the code page, enter search_text in the search input, and submit. SPA renders results inline.",
+        "api_endpoint": {
+          "method": "POST",
+          "url": "https://api.municode.com/Search",
+          "body": {
+            "clientId": "{clientId}",
+            "searchText": "{search_text}",
+            "contentTypeId": "{content_type}",
+            "pageNum": "{page_number}",
+            "pageSize": "{page_size}",
+            "fragmentSize": 200,
+            "isAdvanced": false,
+            "isAutocomplete": false,
+            "mode": "code",
+            "sort": 0,
+            "stateId": null,
+            "titlesOnly": false
+          },
+          "response_fields": {
+            "NumberOfHits": "Total number of matching results",
+            "Hits": "Array of result objects with nodeId, title, fragment (highlighted snippet), breadcrumb",
+            "ContentTypeFacets": "Breakdown of results by content type",
+            "YearFacets": "Breakdown of results by year (for ordinances)"
+          }
+        },
+        "spa_selectors": {
+          "search_input": "input[type='search'], input.search-input, #searchInput",
+          "search_button": "button.search-btn, .fa-search",
+          "results_container": ".search-results",
+          "result_items": ".search-result-item",
+          "result_title": ".result-title",
+          "result_snippet": ".result-fragment, .highlight",
+          "result_breadcrumb": ".result-breadcrumb",
+          "result_link": "a.result-link",
+          "pagination": ".pagination, .pager"
+        }
+      }
+    },
+
+    {
+      "name": "municode_cross_municipality_search",
+      "description": "Search across ALL municipalities' codes hosted on Municode for a keyword or phrase (MuniPRO functionality). Extremely powerful for comparative policy research — find how other cities handle a specific topic like 'accessory dwelling units', 'food trucks', or 'short-term rentals'. Returns results grouped by municipality.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Search query. Supports keywords, phrases in quotes, and boolean operators."
+          },
+          "state_abbr": {
+            "type": "string",
+            "description": "Optional: limit search to a specific state (two-letter abbreviation, lowercase). Omit to search nationally."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number for paginated results",
+            "default": 1
+          }
+        },
+        "required": ["search_text"]
+      },
+      "_navigation": {
+        "browser_url": "https://library.municode.com/search",
+        "browser_action": "Navigate to the global search page, enter search_text, optionally filter by state, and submit.",
+        "api_endpoint": {
+          "method": "POST",
+          "url": "https://api.municode.com/Search",
+          "body": {
+            "clientId": null,
+            "searchText": "{search_text}",
+            "stateId": "{state_id_or_null}",
+            "contentTypeId": "code",
+            "pageNum": "{page_number}",
+            "pageSize": 25,
+            "fragmentSize": 200,
+            "isAdvanced": false,
+            "isAutocomplete": false,
+            "mode": "munipro",
+            "sort": 0,
+            "titlesOnly": false
+          },
+          "notes": "When clientId is null and mode is 'munipro', the search spans all municipalities. stateId is a numeric identifier, not the abbreviation — must be mapped from the state list."
+        },
+        "spa_selectors": {
+          "search_input": "input.global-search, input[type='search']",
+          "state_filter": "select.state-filter",
+          "results_container": ".search-results",
+          "result_municipality": ".result-client-name",
+          "result_title": ".result-title",
+          "result_snippet": ".result-fragment"
+        }
+      }
+    },
+
+    {
+      "name": "municode_get_client_info",
+      "description": "Retrieve the internal Municode identifiers (clientId, productId, jobId) for a given municipality. These identifiers are required by the API endpoints for browsing and content retrieval. Also returns what publications (products) are available and what features are enabled.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state_abbr": {
+            "type": "string",
+            "description": "Two-letter US state abbreviation, lowercase"
+          },
+          "municipality_slug": {
+            "type": "string",
+            "description": "Municipality URL slug as it appears in library.municode.com URLs"
+          }
+        },
+        "required": ["state_abbr", "municipality_slug"]
+      },
+      "_navigation": {
+        "api_endpoints": [
+          {
+            "step": 1,
+            "description": "Get clientId from the state client list",
+            "method": "GET",
+            "url": "https://api.municode.com/Clients?stateAbbr={state_abbr}",
+            "notes": "Returns array of clients. Match by slug or name to find the clientId."
+          },
+          {
+            "step": 2,
+            "description": "Get products (publications) for this client",
+            "method": "GET",
+            "url": "https://api.municode.com/ClientProducts?clientId={clientId}",
+            "notes": "Returns array of products with productId, productName, and enabled features. The 'Code of Ordinances' product is the most common."
+          },
+          {
+            "step": 3,
+            "description": "Get active job for the product",
+            "method": "GET",
+            "url": "https://api.municode.com/ProductDetail?productId={productId}",
+            "notes": "Returns product details including the active jobId needed for CodeTree and Content endpoints."
+          }
+        ],
+        "response_summary": {
+          "clientId": "Numeric ID for the municipality in Municode's system",
+          "productId": "Numeric ID for the specific publication (e.g., Code of Ordinances)",
+          "jobId": "Numeric ID for the current codification version/job",
+          "features": "Object showing which features are enabled: OrdBank, CodeBank, MuniDocs, etc."
+        }
+      }
+    },
+
+    {
+      "name": "municode_get_ordinance_history",
+      "description": "Retrieve the legislative history (OrdBank/OrdLink) for a specific code section, showing which ordinances originally created or amended the section. Links back to the original ordinance documents. Only available if the municipality has OrdBank/OrdLink enabled.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state_abbr": {
+            "type": "string",
+            "description": "Two-letter US state abbreviation, lowercase"
+          },
+          "municipality_slug": {
+            "type": "string",
+            "description": "Municipality URL slug"
+          },
+          "node_id": {
+            "type": "string",
+            "description": "The nodeId of the code section to get history for"
+          }
+        },
+        "required": ["state_abbr", "municipality_slug", "node_id"]
+      },
+      "_navigation": {
+        "browser_url": "https://library.municode.com/{state_abbr}/{municipality_slug}/codes/{publication_slug}?nodeId={node_id}",
+        "browser_action": "Navigate to the section. History notes appear at the bottom of each section with links to original ordinances. OrdLink badges in the TOC indicate sections with linked ordinances.",
+        "spa_selectors": {
+          "history_note": ".history-note, .code-history",
+          "ordinance_link": "a.ord-link, a[href*='ordbank']",
+          "ordinance_number": ".ord-number",
+          "ordinance_date": ".ord-date"
+        }
+      }
+    },
+
+    {
+      "name": "municode_compare_versions",
+      "description": "Access CodeBank version comparison for a code section — showing how the text has changed between different supplement dates. Only available if the municipality has CodeBank enabled. Useful for tracking how a specific ordinance section has evolved over time.",
+      "annotations": { "readOnlyHint": true },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state_abbr": {
+            "type": "string",
+            "description": "Two-letter US state abbreviation, lowercase"
+          },
+          "municipality_slug": {
+            "type": "string",
+            "description": "Municipality URL slug"
+          },
+          "node_id": {
+            "type": "string",
+            "description": "The nodeId of the code section to compare versions for"
+          }
+        },
+        "required": ["state_abbr", "municipality_slug", "node_id"]
+      },
+      "_navigation": {
+        "browser_url": "https://library.municode.com/{state_abbr}/{municipality_slug}/codes/{publication_slug}?nodeId={node_id}",
+        "browser_action": "Navigate to the section page. Click the 'Compare Versions' button (if available). The SPA will display a version selector and a diff view showing additions, deletions, and modifications between supplement dates.",
+        "spa_selectors": {
+          "compare_button": "button.compare-versions, .btn-compare",
+          "version_selector": "select.version-select, .codebank-versions",
+          "diff_container": ".compare-container, .diff-view",
+          "added_text": ".diff-added, .ins",
+          "removed_text": ".diff-removed, .del"
+        }
+      }
+    }
+  ],
+
+  "_nodeId_conventions": {
+    "description": "Municode nodeIds follow an encoded path pattern that represents the document hierarchy. Understanding the pattern helps predict nodeIds without browsing.",
+    "examples": {
+      "ELMUCO": "Root node for Elgin Municipal Code",
+      "MUCO_TIT19ZO": "Title 19 - ZONING (MUCO = Municipal Code, TIT19 = Title 19, ZO = Zoning)",
+      "MUCO_TIT9HESA": "Title 9 - HEALTH AND SAFETY",
+      "MUCO_TIT2ADPE": "Title 2 - ADMINISTRATIVE PERSONNEL",
+      "MUCO_TIT5PR": "Title 5 - PROCUREMENTS",
+      "MUCO_TIT16BUCO_CH16.12PRMACO": "Title 16 Building Code, Chapter 16.12 Property Maintenance Code",
+      "MUCO_TIT1GEPR": "Title 1 - GENERAL PROVISIONS",
+      "MUCO_TIT18SU_CH18.16PRPL": "Title 18 Subdivisions, Chapter 18.16"
+    },
+    "pattern": "The nodeId is constructed from abbreviated section names joined by underscores. Titles use TITxx, Chapters use CHxx.xx, Sections use Sxx.xx.xxx. Abbreviations compress common words: ZO=Zoning, HESA=Health&Safety, ADPE=Administrative Personnel, GEPR=General Provisions, SU=Subdivisions, BUCO=Building Code, PR=Procurements."
+  },
+
+  "_integration_with_legistar": {
+    "description": "How Municode and Legistar work together in the municipal governance workflow.",
+    "workflow": [
+      "1. A proposed ordinance appears on a Legistar agenda (e.g., 'Amending Section 19.07.030 of the Zoning Code')",
+      "2. The council member can look up the current text of Section 19.07.030 in Municode to understand what's being changed",
+      "3. The ordinance moves through committees in Legistar (tracked via vote history)",
+      "4. If adopted, the ordinance is codified into Municode, updating the affected sections",
+      "5. OrdLink in Municode links back to the original meeting where the ordinance was discussed",
+      "6. CodeBank in Municode preserves the previous version for historical comparison"
+    ],
+    "cross_reference_pattern": "When a Legistar agenda item references a code section (e.g., 'Amending Section 2-193 of the Kane County Code'), the agent should: (1) extract the section reference, (2) map it to a Municode nodeId, (3) retrieve the current section text to show the official what's being amended."
+  },
+
+  "_known_municipalities_illinois": {
+    "description": "Illinois municipalities on Municode for reference",
+    "examples": [
+      { "slug": "elgin", "name": "City of Elgin" },
+      { "slug": "aurora", "name": "City of Aurora" },
+      { "slug": "naperville", "name": "City of Naperville" },
+      { "slug": "joliet", "name": "City of Joliet" },
+      { "slug": "rockford", "name": "City of Rockford" },
+      { "slug": "springfield", "name": "City of Springfield" },
+      { "slug": "champaign", "name": "City of Champaign" },
+      { "slug": "peoria", "name": "City of Peoria" },
+      { "slug": "waukegan", "name": "City of Waukegan" },
+      { "slug": "cicero", "name": "Town of Cicero" }
+    ],
+    "notes": "Not all Illinois municipalities use Municode. Some use American Legal Publishing (codelibrary.amlegal.com — e.g., Kane County), General Code (ecode360.com), or Sterling Codifiers. Verify the municipality is on Municode before attempting to use these tools."
+  }
+}
