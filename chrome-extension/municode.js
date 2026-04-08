@@ -250,8 +250,12 @@
 
         // API returns { Docs: [{ Id, Title, Content (HTML), ... }], ... }
         const docs = data.Docs || [];
+        // Filter to only the requested node and its direct children
+        const targetDoc = docs.find((d) => d.Id === node_id);
+        const relevantDocs = targetDoc ? [targetDoc] : docs.filter((d) => (d.Id || "").startsWith(node_id));
+        const docsToUse = relevantDocs.length > 0 ? relevantDocs : docs;
         const parts = [];
-        for (const doc of docs) {
+        for (const doc of docsToUse) {
           const content = doc.Content;
           if (!content) continue;
           const title = doc.Title || "";
@@ -262,9 +266,9 @@
         }
 
         const fullText = parts.join("\n\n");
-        const truncated = fullText.length > 10000;
+        const truncated = fullText.length > 30000;
         const content = truncated
-          ? fullText.substring(0, 10000) + "\n\n[... truncated — request a more specific node_id for full text]"
+          ? fullText.substring(0, 30000) + "\n\n[... truncated — request a more specific node_id for full text]"
           : fullText;
 
         // Also extract recent ordinances if present

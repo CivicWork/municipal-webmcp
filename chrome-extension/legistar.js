@@ -96,7 +96,7 @@
           const minutesLink = cells[8]?.querySelector('a[href*="View.ashx"]');
 
           const location = text(cells[4]);
-          const cancelled = location?.includes("CANCELLED") ?? false;
+          const cancelled = /cancel/i.test(location ?? "");
 
           meetings.push({
             name: text(nameLink) || text(cells[0]),

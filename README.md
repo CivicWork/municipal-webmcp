@@ -40,7 +40,7 @@ A Manifest V3 Chrome extension that registers WebMCP tools directly in the brows
 - **legistar.js** — 7 tools, uses same-origin fetch to parse server-rendered ASP.NET pages
 - **municode.js** — 5 tools, uses the public Municode REST API (`api.municode.com`)
 
-Requires the WebMCP flag enabled at `chrome://flags/#enable-webmcp-testing`.
+Requires Chrome with WebMCP support (see [Setup](#setup) below).
 
 ### Documentation (`docs/`)
 
@@ -58,20 +58,58 @@ Legistar and Municode cover the full lifecycle of municipal law:
 
 An agent with both configs can follow an ordinance from introduction through adoption to codification — or start from codified law and trace back to the meeting where it was discussed.
 
-## Usage
+## What It Does
 
-### With a WebMCP-compatible agent
+Instead of manually clicking through a government website to find meeting dates, agenda items, and legislation, you ask a question in plain English. The AI reads the page through structured tools, chains multiple lookups together, and returns a complete answer in seconds — with real data from the live site, not a hallucinated guess.
 
-Point your agent at the config files. The `_navigation` blocks in each tool definition contain the URLs, selectors, and API endpoints the agent needs.
+| Without WebMCP | With WebMCP |
+|---|---|
+| Click calendar → click meeting → scroll → find PDF | "What's on the agenda for Tuesday?" |
+| One lookup at a time, across multiple pages | AI chains 3+ tools in a single pass |
+| You need to know where things are on the site | Describe what you want in plain language |
+| Data stays trapped in the webpage | Data comes back structured and linked |
 
-### With the Chrome extension
+The extension doesn't replace the website — it works **on** the website. It doesn't store or cache data. It doesn't require the government to change anything. It reads what's already public.
 
-1. Clone this repo
+## Setup
+
+### Prerequisites
+
+- **Chrome** (version 133+) with WebMCP support. If your Chrome version doesn't have native WebMCP support yet, enable the flag at `chrome://flags/#enable-webmcp-testing` and relaunch.
+- **A Gemini API key** — get one free at [aistudio.google.com](https://aistudio.google.com/apikey). The testing interface uses Gemini as the AI model.
+
+### Install the extension
+
+1. Clone or download this repo
 2. Open `chrome://extensions/` in Chrome
-3. Enable "Developer mode"
-4. Click "Load unpacked" and select the `chrome-extension/` directory
-5. Enable `chrome://flags/#enable-webmcp-testing`
-6. Navigate to any `*.legistar.com` or `library.municode.com` page
+3. Enable **Developer mode** (toggle in top-right corner)
+4. Click **Load unpacked** and select the `chrome-extension/` directory
+5. You should see "CivicWork WebMCP" appear in your extensions list
+
+### Install the testing tool
+
+6. Install **[WebMCP - Model Context Tool Inspector](https://chromewebstore.google.com/detail/webmcp-model-context-tool/gbpdfapgefenggkahomfgkhfehlcenpd)** from the Chrome Web Store — this is Google's tool for interacting with WebMCP tools
+7. Open the inspector (click its icon in the toolbar) and click **Set Gemini API Key** to enter your key
+
+### Try it
+
+8. Navigate to any Legistar site (e.g., `countyofkane.legistar.com/Calendar.aspx`)
+9. Open the WebMCP Inspector — you should see 7 tools listed under "WebMCP Tools"
+10. Type a question in the **User Prompt** box and click **Send**
+
+Try: *"What meetings are coming up this week? Get the agenda for the earliest one."*
+
+The AI will call your tools, fetch live data from the page, and return a structured answer.
+
+### Notes
+
+- The CivicWork WebMCP extension appears **greyed out** in Chrome's extension menu — this is normal. It's a content-script-only extension with no popup UI. It works silently in the background.
+- If you see "No tools registered" in the inspector, **refresh the Legistar/Municode page**. The tools re-register on each page load.
+- Between test runs, refresh the page to re-establish the tool connection.
+
+## Usage with a WebMCP-compatible agent
+
+The Chrome extension is one way to use these tools. You can also point any WebMCP-compatible agent at the config files in `configs/`. The `_navigation` blocks in each tool definition contain the URLs, selectors, and API endpoints the agent needs.
 
 ### Known municipalities
 
