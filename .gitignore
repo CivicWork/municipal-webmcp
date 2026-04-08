@@ -1,0 +1,10 @@
+# Private strategy / research docs
+docs/git-for-gov-briefing.md
+docs/policyaide-integrated-prompt.md
+docs/policyaide-meeting-briefing-prompt.md
+
+# Third-party preview documentation (not for redistribution)
+docs/WebMCP Early Preview.docx
+
+# OS
+.DS_Store
